@@ -8,9 +8,12 @@ import pickSession
 import WTCSdatabase
 import YesNoPrompt
 
-version = "0.2 Alpha Testing"
+version = "0.3 Alpha Testing"
 
 handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode='w')
+
+def ordinalConv(n):
+    return str(n) + {1: 'st', 2: 'nd', 3: 'rd'}.get(4 if 10 <= n % 100 < 20 else n % 10, "th")
 
 with open("credentials.json") as jsonData:
     creds = json.load(jsonData)
@@ -57,23 +60,47 @@ async def getstats(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="eventstats")
 @app_commands.describe(season = "Season", round = "Round")
 async def getRaceStat(interaction: discord.Interaction, season: int, round: int):
-    if not int(season):
-        await interaction.response.send_message("Please make sure the season is a number!")
-    elif not int(round):
-        await interaction.response.send_message("Please make sure the round is a number!")
+    view = pickSession.PickSessionPrompt()
+    await interaction.response.send_message(embed=discord.Embed(title="Which session are you getting the stats for?"), view=view)
+    await view.wait()
+    data = WTCSdatabase.getRaceByContext(season=season, round=round, session=view.type)
+    statsEmbed = discord.Embed()
+    statsEmbed.title = f"Season {season}, Round {round}: \n{data['Track']}, {view.type.name.title()}"
+    statsEmbed.description = f"Hosted on {data['Date']}"
+    statsEmbed.color = discord.Color.blurple()
+    if view.type == SessionType.QUALI:
+        statsEmbed.title = statsEmbed.title+"fying"
+        for position in data["Results"]:
+            posData = data["Results"][position]
+            if posData['Time'] != None:
+                displayedTime = posData['Time']
+            else:
+                displayedTime = "No Time Set"
+            statsEmbed.add_field(
+                name = f"{ordinalConv(int(position))}: {posData['Driver']}, {displayedTime}",
+                value = f"Team: {posData['Team']}\nCar: {posData['Car']}",
+                inline=False
+            )
     else:
-        view = pickSession.PickSessionPrompt()
-        await interaction.response.send_message(embed=discord.Embed(title="Which session are you entering data for?"), view=view)
-        await view.wait()
-        data = WTCSdatabase.getRaceByContext(season=season, round=round, session=view.type)
-        print(data)
-        """if view.type == SessionType.QUALI:
-            
-        elif view.type == SessionType.SPRINT:
-            
-        elif view.type == SessionType.FEATURE:"""
+        statsEmbed.title = statsEmbed.title+" Race"
+        statsEmbed.description = statsEmbed.description + f"\nLaps: {data['Laps']}"
+        for position in data["Results"]:
+            posData = data["Results"][position]
+            if posData['Time'] != None:
+                displayedTime = f"\nGap to Leader: {posData['Time']}"
+            else:
+                displayedTime = ""
+            if posData.get('Penalty'):
+                displayedTime = displayedTime + f" ({posData['Penalty']}s Penalty)"
+            statsEmbed.add_field(
+                name = f"{ordinalConv(int(position))}: {posData['Driver']}",
+                value = f"Team: {posData['Team']}\nCar: {posData['Car']}{displayedTime}",
+                inline=False
+            )
+    await interaction.channel.send(embed=statsEmbed)
+    
 
-@bot.tree.command(name="add-race")
+@bot.tree.command(name="addevent")
 @app_commands.describe(season = "Season", round = "Round")
 async def addRaceStat(interaction: discord.Interaction, season: int, round: int):
 
